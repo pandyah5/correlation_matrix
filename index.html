@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>Dynamic Correlation Matrix</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-matrix@1.2.0"></script>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 40px;
+        }
+        h2 {
+            text-align: center;
+        }
+        canvas {
+            max-width: 800px;
+            height: 800px !important;
+        }
+    </style>
+</head>
+<body>
+    <h2>5-Year Correlation Matrix</h2>
+    <canvas id="heatmap"></canvas>
+
+    <script>
+        async function fetchCorrelationData() {
+            const response = await fetch('http://localhost:8000/correlation');
+            if (!response.ok) {
+                alert("Failed to fetch correlation data");
+                return null;
+            }
+            return response.json();
+        }
+
+        function prepareMatrixData(data) {
+            const labels = Object.keys(data);
+            const matrix = [];
+
+            for (let row = 0; row < labels.length; row++) {
+                for (let col = 0; col < labels.length; col++) {
+                    const x = labels[col];
+                    // Flip Y axis so matrix displays intuitively
+                    const y = labels[labels.length - row - 1];
+                    const v = data[y][x];
+                    matrix.push({ x, y, v });
+                }
+            }
+
+            return { labels, matrix };
+        }
+
+        async function renderMatrix() {
+            const data = await fetchCorrelationData();
+            if (!data) return;
+
+            const { labels, matrix } = prepareMatrixData(data);
+
+            const ctx = document.getElementById("heatmap").getContext("2d");
+
+            new Chart(ctx, {
+                type: 'matrix',
+                data: {
+                    datasets: [{
+                        label: 'Correlation',
+                        data: matrix,
+                        width: ({ chart }) => (chart.chartArea?.width ?? 0) / labels.length - 2,
+                        height: ({ chart }) => (chart.chartArea?.height ?? 0) / labels.length - 2,
+                        backgroundColor: ctx => {
+                            const value = ctx.raw.v;
+                            const alpha = Math.abs(value);
+                            return `rgba(${value > 0 ? '0,128,0' : '200,0,0'},${alpha})`;
+                        },
+                        borderWidth: 1,
+                        borderColor: 'white'
+                    }]
+                },
+                options: {
+                    maintainAspectRatio: false,
+                    responsive: true,
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: ctx => {
+                                    const { x, y, v } = ctx.raw;
+                                    return `${y} vs ${x}: ${v.toFixed(2)}`;
+                                }
+                            }
+                        },
+                        legend: { display: false },
+                        title: { display: false }
+                    },
+                    layout: {
+                        padding: 30
+                    },
+scales: {
+    x: {
+        type: 'category',
+        labels: labels,
+        position: 'top',
+        offset: true,   // adds offset from the axis line
+        grid: { display: false },
+        ticks: {
+            font: { size: 14, weight: 'bold' },
+            color: '#000',
+            maxRotation: 60,
+            minRotation: 60,
+            padding: 10, // adds space between labels and axis line
+            align: 'start', // aligns rotated labels better
+            crossAlign: 'far'
+        },
+        // Add padding to separate labels and matrix
+        afterFit: scale => {
+            scale.paddingTop = 30;  // extra top padding to push labels down
+        }
+    },
+    y: {
+        type: 'category',
+        labels: labels.slice().reverse(),
+        offset: true,
+        grid: { display: false },
+        ticks: {
+            font: { size: 14, weight: 'bold' },
+            color: '#000',
+            padding: 15,  // add horizontal space between labels and matrix
+            align: 'right',
+            crossAlign: 'far',
+        },
+        afterFit: scale => {
+            scale.paddingLeft = 40; // shift labels further left from matrix
+        }
+    }
+},
+                    animation: false,
+                    elements: {
+                        rectangle: {
+                            borderRadius: 0
+                        }
+                    },
+                    plugins: [{
+                        id: 'valueLabels',
+                        afterDatasetsDraw(chart) {
+                            const { ctx, data } = chart;
+                            ctx.save();
+                            data.datasets[0].data.forEach((d, i) => {
+                                const meta = chart.getDatasetMeta(0);
+                                const rect = meta.data[i];
+                                if (!rect) return;
+
+                                const { x, y } = rect;
+                                const value = d.v.toFixed(2);
+
+                                ctx.fillStyle = 'black';
+                                ctx.font = '12px sans-serif';
+                                ctx.textAlign = 'center';
+                                ctx.textBaseline = 'middle';
+                                ctx.fillText(value, x, y);
+                            });
+                            ctx.restore();
+                        }
+                    }]
+                }
+            });
+        }
+
+        renderMatrix();
+    </script>
+</body>
+</html>
+
